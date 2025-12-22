@@ -1,0 +1,13 @@
+{
+  "name": "contatore-lazise-2026",
+  "version": "1.0.0",
+  "description": "Web service per leggere il contatore iscritti Lazise Love Run 2026",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "puppeteer": "^21.3.8"
+  }
+}
