@@ -1,55 +1,96 @@
-const express = require('express');
-const puppeteer = require('puppeteer');
+import express from "express";
+import puppeteer from "puppeteer-core";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
-app.get('/', async (req, res) => {
-    let browser;
-    try {
-        browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-        });
+// cache semplice 60s
+let cache = {
+  value: null,
+  timestamp: 0
+};
 
-        const page = await browser.newPage();
+async function getIscritti() {
+  const now = Date.now();
+  if (cache.value && now - cache.timestamp < 60000) {
+    return cache.value;
+  }
 
-        // 1 Apri pagina iscrizioni
-        await page.goto('https://www.avaibooksports.com/inscripcion/lazise-love-run-2026/', { waitUntil: 'networkidle2' });
+  const browser = await puppeteer.launch({
+    headless: "new",
+    executablePath: "/usr/bin/chromium",
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage"
+    ]
+  });
 
-        // 2️ Clicca sul pulsante "ISCRIVITI SENZA CODICE PROMOZIONALE"
-        const buttons = await page.$x("//button[contains(., 'ISCRIVITI')]");
-        if(buttons.length >= 2){
-            await buttons[1].click(); // il secondo pulsante sotto la scritta
-        }
+  const page = await browser.newPage();
+  await page.goto(
+    "https://www.avaibooksports.com/inscripcion/lazise-love-run-2026/inscripcion_datos/",
+    { waitUntil: "networkidle2", timeout: 60000 }
+  );
 
-        // 3️ Inserisci numero tessera fittizio
-        await page.waitForSelector('input[name="num_licencia"]', { timeout: 5000 });
-        await page.type('input[name="num_licencia"]', '123456');
+  // STEP 1: clic su ISCRIVITI SENZA CODICE PROMO
+  await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll("button, a")];
+    const target = buttons.find(b =>
+      b.innerText.includes("ISCRIVITI") &&
+      b.closest("div")?.innerText.includes("SENZA CODICE")
+    );
+    target?.click();
+  });
 
-        // 4️ Clicca "OK, ISCRIVITI" (il pulsante sotto al campo tessera)
-        const okButtons = await page.$x("//button[contains(., 'OK, ISCRIVITI')]");
-        if(okButtons.length >= 1){
-            await okButtons[0].click();
-        }
+  await page.waitForTimeout(2000);
 
-        // 5️ Attendi che il contatore diventi visibile
-        await page.waitForSelector('.numInsc', { timeout: 5000 });
+  // STEP 2: inserisci tessera
+  await page.type('input[name*="fidal"]', "123456");
+  await page.evaluate(() => {
+    const btns = [...document.querySelectorAll("button")];
+    const ok = btns.find(b => b.innerText.includes("OK"));
+    ok?.click();
+  });
 
-        // 6️ Leggi il numero reale
-        const iscrittiText = await page.$eval('.numInsc', el => el.textContent);
-        // Estrarre il numero prima dello slash
-        const match = iscrittiText.match(/(\d+)\s*\//);
-        const iscritti = match ? parseInt(match[1]) : 0;
+  // STEP 3: conferma dialog
+  await page.waitForTimeout(1500);
+  await page.keyboard.press("Enter");
 
-        res.json({ iscritti });
+  // attesa contatore
+  await page.waitForSelector(".numInsc", { timeout: 15000 });
 
-    } catch (error) {
-        console.error(error);
-        res.json({ errore: true, motivo: error.message });
-    } finally {
-        if(browser) await browser.close();
-    }
+  const iscritti = await page.evaluate(() => {
+    const span = document.querySelector(".numInsc");
+    if (!span) return 0;
+    const match = span.innerText.match(/^(\d+)/);
+    return match ? parseInt(match[1], 10) : 0;
+  });
+
+  await browser.close();
+
+  cache = {
+    value: iscritti,
+    timestamp: now
+  };
+
+  return iscritti;
+}
+
+app.get("/", async (req, res) => {
+  try {
+    const iscritti = await getIscritti();
+    res.json({
+      iscritti,
+      aggiornato: new Date().toISOString()
+    });
+  } catch (e) {
+    res.status(500).json({
+      errore: true,
+      messaggio: e.message
+    });
+  }
 });
 
-app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log("Server avviato sulla porta", PORT);
+});
