@@ -16,15 +16,16 @@ async function getIscritti() {
     return cache.value;
   }
 
-  const browser = await puppeteer.launch({
-    headless: "new",
-    executablePath: "/usr/bin/chromium",
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage"
-    ]
-  });
+const browser = await puppeteer.launch({
+  headless: "new",
+  executablePath: process.env.CHROME_PATH || "/usr/bin/chromium-browser",
+  args: [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage"
+  ]
+});
+
 
   const page = await browser.newPage();
   await page.goto(
@@ -94,3 +95,4 @@ app.get("/", async (req, res) => {
 app.listen(PORT, () => {
   console.log("Server avviato sulla porta", PORT);
 });
+
